@@ -1,9 +1,10 @@
 import os
 import requests
+import json
 from datetime import datetime, timedelta
-from urllib.parse import urlparse, urlencode
+from urllib.parse import urlparse, urlencode, quote, quote
 from config import (
-    RZN1_BASE_URL, RZN1_ENDPOINTS, RZN1_GET_REPORTS_ENDPOINT,
+    RZN1_BASE_URL, RZN1_ENDPOINTS, RZN1_GET_REPORTS_ENDPOINT, RZN1_WAREHOUSE,
     TEMP_DOWNLOAD_DIR, get_date_prefix
 )
 from logger_config import setup_logger, get_default_log_file
@@ -14,20 +15,25 @@ logger = setup_logger('api_client', get_default_log_file('api_client'))
 class DualServiceAPIClient:
     def __init__(self, tokens):
         """
-        Initialize API client for both services
+        Initialize API client for RZN1 service
         Args:
-            tokens (dict): Dictionary with 'rzn1' and 'rzn' tokens
+            tokens (dict): Dictionary with 'rzn1' token
         """
         self.tokens = tokens
         self.sessions = {}
         
-        # Create sessions for both services
-        for service in ['rzn1']:
+        # Create session for RZN1 service
+        if 'rzn1' in tokens and tokens['rzn1']:
             session = requests.Session()
-            if tokens.get(service):
-                session.headers.update({'Authorization': f'{tokens[service]}'})
-                session.headers.update({'warehouse': f'up108_kum_ls1'})
-            self.sessions[service] = session
+            # Use the direct token format (not Bearer) to match the curl command
+            session.headers.update({
+                'Authorization': 'Q4THFcPJzdkzlae71bUByw6sdE9dcl',  # Direct token as in curl
+                'warehouse': RZN1_WAREHOUSE
+            })
+            self.sessions['rzn1'] = session
+            logger.info(f"Initialized RZN1 session with warehouse: {RZN1_WAREHOUSE}")
+        else:
+            raise ValueError("RZN1 token is required")
     
     def _get_service_config(self, service):
         """Get configuration for specified service"""
@@ -45,16 +51,27 @@ class DualServiceAPIClient:
     
     def _get_report_params(self, report_type):
         """
-        Get specific parameters for different report types
+        Get specific parameters for different report types matching the exact curl commands
         """
         yesterday = self._get_yesterday_date()
         
-        # Default parameters for all reports
-        default_params = {}
+        # Warehouse list from the curl command
+        warehouse_list = [
+            "hr009_pla_ls1", "up096_bab_ls1", "up097_ali_ls1", "up098_sag_ls1", 
+            "up099_ban_ls1", "up100_aso_ls1", "up101_ach_ls1", "up102_man_ls1", 
+            "up103_shi_ls1", "up104_der_ls1", "up105_dos_ls1", "up106_miy_ls1", 
+            "up107_jac_ls1", "up108_kum_ls1", "up109_rac_ls1", "up110_lal_hm1", 
+            "up111_bel_hm1", "up112_gos_hm1", "hr007_rjv_ls1", "up061_kur_ls1", 
+            "up083_fat_ls1", "up081_hat_ls1", "up070_tik_ls1", "up064_bha_ls1", 
+            "up054_kur_ls1", "up087_maw_ls1", "up077_bik_ls1", "up076_hai_ls1", 
+            "up073_gbx_ls1", "up069_mah_ls1", "up044_jas_ls1", "up051_has_ls1", 
+            "up067_jag_ls1", "up057_lam_ls1", "up079_bhi_ls1", "up080_tar_ls1", 
+            "up082_mus_ls1", "up090_lko_mat", "up075_ran_ls1", "up043_gau_ls1"
+        ]
         
-        # Report-specific parameters
-        report_params = {
-            'order_summary': {
+        # Report-specific parameters matching exact curl commands
+        if report_type == 'order_summary':
+            return {
                 'id': '100',
                 'columns': [
                     "Cancelled Order Qty", "OrderStatus", "DispatchType", "WAC", "Created By", 
@@ -73,36 +90,47 @@ class DualServiceAPIClient:
                     "Invoice_quantity", "TotalProcurementPrice", "ProcurementPrice", 
                     "Picklist Details", "Order Fields", "ShippingAmount", "Order_Hold_Status"
                 ],
-                'Warehouse': [
-                    "hr009_pla_ls1", "up096_bab_ls1", "up097_ali_ls1", "up098_sag_ls1", 
-                    "up099_ban_ls1", "up100_aso_ls1", "up101_ach_ls1", "up102_man_ls1", 
-                    "up103_shi_ls1", "up104_der_ls1", "up105_dos_ls1", "up106_miy_ls1", 
-                    "up107_jac_ls1", "up108_kum_ls1", "up109_rac_ls1", "up110_lal_hm1", 
-                    "up111_bel_hm1", "up112_gos_hm1", "hr007_rjv_ls1", "up061_kur_ls1", 
-                    "up083_fat_ls1", "up081_hat_ls1", "up070_tik_ls1", "up064_bha_ls1", 
-                    "up054_kur_ls1", "up087_maw_ls1", "up077_bik_ls1", "up076_hai_ls1", 
-                    "up073_gbx_ls1", "up069_mah_ls1", "up044_jas_ls1", "up051_has_ls1", 
-                    "up067_jag_ls1", "up057_lam_ls1", "up079_bhi_ls1", "up080_tar_ls1", 
-                    "up082_mus_ls1", "up090_lko_mat", "up075_ran_ls1", "up043_gau_ls1"
-                ],
-                'From Date': yesterday
-            },
-            'sales_return': {
-                'From Date': yesterday
-            },
-            'mati_inventory': {
-                'From Date': yesterday
-            },
-            'mati_open_orders': {
-                'From Date': yesterday
-            },
-            'store_inventory': {
-                'From Date': yesterday
+                'Warehouse': warehouse_list,
+                'From Date': yesterday,
+                'To Date': '',
+                'Order Reference': '',
+                'Customer Name': '',
+                'Order Type': '',
+                'SKU Code': ''
             }
-        }
-        
-        # Return default params if no specific params for this report type
-        return report_params.get(report_type, default_params)
+        elif report_type == 'sales_return':
+            return {
+                'id': '95',
+                'columns': [
+                    "Order Reference", "Order Date", "Customer Id", "Customer Name", 
+                    "Customer Pincode", "Customer Country", "Invoice / Challan Number", 
+                    "Invoice Date", "Return Id", "Reference Type", "Return Type", 
+                    "Return Date", "Credit Note Date", "Credit Note Number", "Sku Code", 
+                    "Sku Reference", "Sku Description", "Sku Category", "Sku Sub Category", 
+                    "Sku Brand", "Weight", "Unit Price", "HSN Code", "Quantity", 
+                    "CreditNoteAmount(w/o-tax)", "CGST", "SGST", "IGST", "CESS", 
+                    "SGSTAmount", "IGSTAmount", "CESSAmount", "TaxPercentage", 
+                    "CreditNoteTaxAmount", "TotalCreditNoteAmount", "Accepted User", 
+                    "Customer State", "Customer GST Number", "GST Number", "Reason", 
+                    "ExtraFields", "CGSTAmount"
+                ],
+                'Warehouse': warehouse_list,
+                'Order Reference': '',
+                'Customer Id': '',
+                'Invoice / Challan Number': '',
+                'Return Id': '',
+                'Reference Type': '',
+                'Credit Note Number': '',
+                'Sku Code': '',
+                'From Date': yesterday,
+                'To Date': ''
+            }
+        else:
+            # Default parameters for other report types
+            return {
+                'From Date': yesterday,
+                'To Date': ''
+            }
     
     def generate_report(self, service, report_type, custom_params=None):
         """
@@ -131,33 +159,79 @@ class DualServiceAPIClient:
         
         try:
             logger.info(f"Generating {report_type} report for {service.upper()}...")
-            logger.info(f"Using parameters: {params}")
+            logger.info(f"Using URL: {url}")
             
-            # For order_summary, we need to use URL parameters
-            if report_type == 'order_summary':
-                # Convert lists to proper format for URL parameters
-                query_params = {}
-                for key, value in params.items():
-                    if isinstance(value, list):
-                        query_params[key] = value
-                    else:
-                        query_params[key] = value
+            if report_type in ['order_summary', 'sales_return']:
+                # Build the exact URL as in the curl command - arrays must be JSON strings
+                # Use separators to remove spaces from JSON (to match curl format)
+                columns_json = json.dumps(params['columns'], separators=(',', ':'))
+                warehouse_json = json.dumps(params['Warehouse'], separators=(',', ':'))
                 
-                # Append query parameters to URL
-                query_string = urlencode(query_params, doseq=True)
+                # Build parameters exactly as in curl
+                url_params = {
+                    'id': params['id'],
+                    'columns': columns_json,
+                    'Warehouse': warehouse_json,
+                    'From Date': params['From Date'],
+                    'To Date': params.get('To Date', ''),
+                }
+                
+                # Add report-specific parameters
+                if report_type == 'order_summary':
+                    url_params.update({
+                        'Order Reference': params.get('Order Reference', ''),
+                        'Customer Name': params.get('Customer Name', ''),
+                        'Order Type': params.get('Order Type', ''),
+                        'SKU Code': params.get('SKU Code', '')
+                    })
+                elif report_type == 'sales_return':
+                    url_params.update({
+                        'Order Reference': params.get('Order Reference', ''),
+                        'Customer Id': params.get('Customer Id', ''),
+                        'Invoice / Challan Number': params.get('Invoice / Challan Number', ''),
+                        'Return Id': params.get('Return Id', ''),
+                        'Reference Type': params.get('Reference Type', ''),
+                        'Credit Note Number': params.get('Credit Note Number', ''),
+                        'Sku Code': params.get('Sku Code', '')
+                    })
+                
+                # Build query string with proper encoding
+                url_parts = []
+                for key, value in url_params.items():
+                    if value or value == '':  # Include empty strings as in curl
+                        url_parts.append(f"{key}={quote(str(value))}")
+                
+                query_string = '&'.join(url_parts)
                 full_url = f"{url}?{query_string}"
                 
-                logger.info(f"Making request to: {full_url}")
-                response = self.sessions[service].get(full_url)
-            else:
-                # For other reports, use JSON body
-                response = self.sessions[service].post(url, json=params)
+                logger.info(f"Making GET request to: {full_url[:200]}...")  # Log first 200 chars
                 
+                # Make GET request as per curl command
+                response = self.sessions[service].get(full_url)
+                
+            else:
+                # For other report types, use similar approach or adapt as needed
+                logger.info("Using JSON POST approach for other report types")
+                response = self.sessions[service].post(url, json=params)
             response.raise_for_status()
+            
             logger.info(f"Successfully initiated {report_type} report generation for {service.upper()}")
+            logger.info(f"Response status: {response.status_code}")
+            
+            # Log response if it's JSON
+            try:
+                response_data = response.json()
+                logger.info(f"Response data: {response_data}")
+            except:
+                logger.info(f"Response text: {response.text[:500]}")  # First 500 chars
+            
             return True
+            
         except requests.exceptions.RequestException as e:
             logger.error(f"Error generating {report_type} report for {service}: {str(e)}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response content: {e.response.text}")
             raise
     
     def get_available_reports(self, service):
@@ -169,34 +243,68 @@ class DualServiceAPIClient:
             list: List of available report links
         """
         base_url, _, reports_endpoint = self._get_service_config(service)
+        base_url = base_url.rstrip('/')  # Remove trailing slash if present
         url = f"{base_url}{reports_endpoint}"
         
         try:
             logger.info(f"Fetching available reports for {service.upper()}...")
             response = self.sessions[service].get(url)
             response.raise_for_status()
-            reports = response.json().get('reports', [])
+            
+            # Log the raw response to understand the structure
+            logger.info(f"Raw response: {response.text[:500]}")
+            
+            response_data = response.json()
+            
+            # Handle different possible response structures
+            if isinstance(response_data, list):
+                reports = response_data
+            elif isinstance(response_data, dict):
+                # Try different possible keys
+                reports = response_data.get('reports', [])
+                if not reports:
+                    reports = response_data.get('data', [])
+                if not reports:
+                    reports = response_data.get('results', [])
+                if not reports and 'result' in response_data:
+                    reports = response_data['result']
+            else:
+                reports = []
+            
             logger.info(f"Found {len(reports)} available reports for {service.upper()}")
             return reports
         except requests.exceptions.RequestException as e:
             logger.error(f"Error getting available reports for {service}: {str(e)}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response content: {e.response.text}")
             raise
     
-    def download_file(self, url, local_path, service):
+    def download_file(self, url, local_path, service=None):
         """
         Download a file from a URL to a local path
         Args:
             url (str): URL to download from
             local_path (str): Local path to save the file
-            service (str): Service name for session selection
+            service (str): Service name (not used for S3 downloads)
         """
         try:
             logger.info(f"Downloading file to {local_path}...")
-            with self.sessions[service].get(url, stream=True) as response:
-                response.raise_for_status()
-                with open(local_path, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
+            
+            # For S3 URLs, use a direct request without authentication headers
+            # as the URL is pre-signed
+            if 's3.amazonaws.com' in url:
+                response = requests.get(url, stream=True)
+            else:
+                # For other URLs, use the authenticated session
+                response = self.sessions[service].get(url, stream=True)
+            
+            response.raise_for_status()
+            
+            with open(local_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
             logger.info(f"Successfully downloaded {local_path}")
             return local_path
         except requests.exceptions.RequestException as e:
@@ -207,7 +315,7 @@ class DualServiceAPIClient:
         """
         Download a specific report by matching its name pattern
         Args:
-            service (str): 'rzn1' or 'rzn'
+            service (str): 'rzn1'
             report_name_pattern (str): Pattern to match in report name
             local_filename (str): Local filename to save as
         Returns:
@@ -215,12 +323,76 @@ class DualServiceAPIClient:
         """
         reports = self.get_available_reports(service)
         
+        # Look for completed reports matching the pattern
         for report in reports:
-            if report_name_pattern.lower() in report.get('name', '').lower():
-                download_url = report.get('download_url')
+            report_name = report.get('name', '').lower()
+            report_status = report.get('status', '').lower()
+            
+            # Match the pattern and ensure the report is completed
+            if (report_name_pattern.lower() in report_name and 
+                report_status == 'completed'):
+                
+                download_url = report.get('generated_file')
                 if download_url:
+                    logger.info(f"Found completed report: {report.get('name')} (ID: {report.get('id')})")
+                    logger.info(f"Created: {report.get('creation_date')}")
+                    
                     local_path = os.path.join(TEMP_DOWNLOAD_DIR, local_filename)
                     return self.download_file(download_url, local_path, service)
         
-        logger.warning(f"No report found matching pattern '{report_name_pattern}' for {service.upper()}")
+        # If no completed report found, log available reports for debugging
+        logger.info(f"No completed report found matching pattern '{report_name_pattern}'")
+        logger.info("Available reports:")
+        for report in reports[:5]:  # Show first 5 reports
+            logger.info(f"  - {report.get('name')} (Status: {report.get('status')}, ID: {report.get('id')})")
+        
         return None
+    
+    def download_latest_completed_report(self, service, report_name_pattern, local_filename):
+        """
+        Download the latest completed report matching the pattern
+        Args:
+            service (str): 'rzn1'
+            report_name_pattern (str): Pattern to match in report name
+            local_filename (str): Local filename to save as
+        Returns:
+            str: Path to downloaded file or None if not found
+        """
+        reports = self.get_available_reports(service)
+        
+        # Filter for completed reports matching the pattern
+        matching_reports = []
+        for report in reports:
+            report_name = report.get('name', '').lower()
+            report_status = report.get('status', '').lower()
+            
+            # More flexible pattern matching - handle "order summary" vs "order_summary" 
+            # and "sales return" vs "sales_return"
+            pattern_normalized = report_name_pattern.lower().replace('_', ' ')
+            name_normalized = report_name.replace('_', ' ')
+            
+            # Special handling for sales return reports which might appear as "SALES RETURN" or similar
+            if pattern_normalized == 'sales return':
+                pattern_matches = ('sales return' in name_normalized or 
+                                 'return' in name_normalized)
+            else:
+                pattern_matches = pattern_normalized in name_normalized
+            
+            if (pattern_matches and 
+                report_status == 'completed' and 
+                report.get('generated_file')):
+                matching_reports.append(report)
+        
+        if not matching_reports:
+            logger.warning(f"No completed reports found matching pattern '{report_name_pattern}' for {service.upper()}")
+            return None
+        
+        # Sort by ID (assuming higher ID means more recent) and get the latest
+        latest_report = max(matching_reports, key=lambda r: r.get('id', 0))
+        
+        logger.info(f"Downloading latest completed report: {latest_report.get('name')} (ID: {latest_report.get('id')})")
+        logger.info(f"Created: {latest_report.get('creation_date')}")
+        
+        download_url = latest_report.get('generated_file')
+        local_path = os.path.join(TEMP_DOWNLOAD_DIR, local_filename)
+        return self.download_file(download_url, local_path, service)

@@ -17,7 +17,9 @@ def generate_filename(service, report_type, date_prefix):
     """Generate filename based on service, report type and date"""
     if service == 'rzn1':
         if report_type == 'sales_return':
-            return f"rzn1_sales_summary_{date_prefix}.csv"
+            return f"SALES_RETURN{date_prefix}.csv"
+        elif report_type == 'order_summary':
+            return f"ORDER_SUMMARY{date_prefix}.csv"
         else:
             return f"rzn1_{report_type}_{date_prefix}.csv"
     else:  # rzn
@@ -40,8 +42,12 @@ def execute_processor_script(script_name):
     """Execute a processor script and return success status"""
     try:
         logger.info(f"Executing {script_name}...")
+        
+        # Use the Python executable from the virtual environment
+        python_executable = '/home/headrun/wms-crawl-scripts/.venv/bin/python'
+        
         result = subprocess.run(
-            ['python', script_name],
+            [python_executable, script_name],
             cwd=os.path.dirname(os.path.abspath(__file__)),
             capture_output=True,
             text=True,
@@ -85,28 +91,22 @@ def main():
         logger.info("Step 2: Initializing API client for RZN1 service...")
         api_client = DualServiceAPIClient(tokens)
         
-        # Step 3: Generate all reports
+        # Step 3: Generate reports
         logger.info("Step 3: Generating reports for RZN1 service...")
         
-        # RZN1 Reports
-        rzn1_reports = ['order_summary', 'sales_return', 'mati_inventory', 'mati_open_orders', 'store_inventory']
+        # Generate both Order Summary and Sales Return for order processing workflow
+        rzn1_reports = ['order_summary', 'sales_return']
         logger.info(f"Generating RZN1 reports: {rzn1_reports}")
         for report_type in rzn1_reports:
             try:
                 # The API client now automatically handles the correct parameters for each report type
                 # including setting yesterday's date for 'From Date'
                 api_client.generate_report('rzn1', report_type)
+                logger.info(f"✓ Successfully requested generation of {report_type}")
             except Exception as e:
-                logger.error(f"Failed to generate {report_type} for RZN1: {str(e)}")
-        
-        # RZN Reports
-        # rzn_reports = ['order_summary', 'sales_return', 'fdb_inventory', 'fdb_open_orders', 'rbl_inventory', 'store_inventory']
-        # logger.info(f"Generating RZN reports: {rzn_reports}")
-        # for report_type in rzn_reports:
-        #     try:
-        #         api_client.generate_report('rzn', report_type)
-        #     except Exception as e:
-        #         logger.error(f"Failed to generate {report_type} for RZN: {str(e)}")
+                logger.error(f"✗ Failed to generate {report_type} for RZN1: {str(e)}")
+                # Continue with other reports even if one fails
+                continue
         
         # Step 4: Wait for reports to be generated
         logger.info(f"Step 4: Waiting {args.wait_time} seconds for reports to be generated...")
@@ -122,7 +122,8 @@ def main():
         for report_type in rzn1_reports:
             try:
                 filename = generate_filename('rzn1', report_type, date_prefix)
-                local_path = api_client.download_report_by_name('rzn1', report_type, filename)
+                # Use the new method that looks for completed reports
+                local_path = api_client.download_latest_completed_report('rzn1', report_type, filename)
                 if local_path:
                     downloaded_files.append(local_path)
                     logger.info(f"✓ Downloaded: {filename}")
@@ -150,13 +151,23 @@ def main():
         if args.upload_s3 and downloaded_files:
             logger.info(f"Step 6: Uploading {len(downloaded_files)} files to S3...")
             s3_uploader = S3Uploader()
+            date_prefix = get_date_prefix()
             
             for file_path in downloaded_files:
                 try:
                     filename = os.path.basename(file_path)
-                    s3_key = f"reports/{date_prefix}/{filename}"
+                    # Use date-specific subfolders as expected by rzn1_order_summary_processor.py
+                    if 'ORDER_SUMMARY' in filename or 'SALES_RETURN' in filename:
+                        s3_key = f"rzn1/order_summary/raw/{date_prefix}/{filename}"
+                    elif 'inventory' in filename:
+                        s3_key = f"rzn1/inventory_summary/raw/{date_prefix}/{filename}"
+                    elif 'closing_stock' in filename:
+                        s3_key = f"rzn1/closing_stock/raw/{date_prefix}/{filename}"
+                    else:
+                        s3_key = f"rzn1/raw/{filename}"
+                    
                     if s3_uploader.upload_file(file_path, s3_key):
-                        logger.info(f"✓ Uploaded to S3: {filename}")
+                        logger.info(f"✓ Uploaded to S3: {s3_key}")
                         uploaded_files.append(file_path)
                     else:
                         logger.error(f"✗ Failed to upload to S3: {filename}")
@@ -172,9 +183,10 @@ def main():
         if not args.skip_processors and uploaded_files:
             logger.info("Step 8: Executing processor scripts...")
             processor_scripts = [
-                'rzn1_order_summary_processor.py',
-                'rzn1_inventory_summary_processor.py',
-                'rzn1_closing_stock_processor.py'
+                'rzn1_order_summary_processor.py'  # Use the actual order summary processor
+                # We'll add other processors later:
+                # 'rzn1_inventory_summary_processor.py',
+                # 'rzn1_closing_stock_processor.py'
             ]
             
             for script in processor_scripts:
