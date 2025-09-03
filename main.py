@@ -224,7 +224,22 @@ def main():
                 else:
                     logger.warning(f"Processor script {script} not found, skipping...")
         
-        # Step 9: Summary
+        # Step 9: Verify S3 outputs (if processors were executed)
+        if not args.skip_processors and uploaded_files:
+            logger.info("Step 9: Verifying S3 outputs...")
+            try:
+                from verify_s3_outputs import verify_workflow_completion
+                verification_success = verify_workflow_completion()
+                if verification_success:
+                    logger.info("✅ All outputs verified successfully in S3!")
+                else:
+                    logger.warning("⚠️ Some expected outputs may be missing in S3")
+            except ImportError:
+                logger.warning("Verification script not available, skipping S3 verification")
+            except Exception as e:
+                logger.warning(f"S3 verification failed: {str(e)}")
+        
+        # Step 10: Summary
         logger.info("=" * 60)
         logger.info("PROCESS SUMMARY")
         logger.info("=" * 60)
