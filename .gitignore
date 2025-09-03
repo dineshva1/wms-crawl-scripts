@@ -1,0 +1,4 @@
+.venv/
+.env
+01Cleaned_OrderSummary.py
+02Cleaned_ClosingSR.py
