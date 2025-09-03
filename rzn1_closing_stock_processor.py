@@ -177,7 +177,6 @@ class InventorySummaryProcessor:
             df['Warehouse'] = df['Warehouse'].str.upper()
             df['Value'] = df['Available Quantity'] * df['Price']
             logger.info(f"Data cleaning completed. Final shape: {df.shape}")
-            import pdb; pdb.set_trace()
             return df[['Warehouse', 'SKU Code', 'SKU Description', 'SKU Category', 'SKU Sub Category', 'Available Quantity', 'Value']]
         except Exception as e:
             logger.error(f"Error in data cleaning: {str(e)}")

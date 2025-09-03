@@ -20,6 +20,12 @@ def generate_filename(service, report_type, date_prefix):
             return f"SALES_RETURN{date_prefix}.csv"
         elif report_type == 'order_summary':
             return f"ORDER_SUMMARY{date_prefix}.csv"
+        elif report_type == 'batch_level_inventory':
+            return f"BATCH_LEVEL_INVENTORY{date_prefix}.csv"
+        elif report_type == 'open_order_summary':
+            return f"OPEN_ORDER_SUMMARY{date_prefix}.csv"
+        elif report_type == 'closing_stock':
+            return f"CLOSING_STOCK{date_prefix}.csv"
         else:
             return f"rzn1_{report_type}_{date_prefix}.csv"
     else:  # rzn
@@ -94,8 +100,31 @@ def main():
         # Step 3: Generate reports
         logger.info("Step 3: Generating reports for RZN1 service...")
         
-        # Generate both Order Summary and Sales Return for order processing workflow
-        rzn1_reports = ['order_summary', 'sales_return']
+        # Configure all three workflows to run in sequence
+        workflows = {
+            'order_summary': {
+                'reports': ['order_summary', 'sales_return'],
+                'processor': 'rzn1_order_summary_processor.py'
+            },
+            'inventory_summary': {
+                'reports': ['batch_level_inventory', 'open_order_summary'],
+                'processor': 'rzn1_inventory_summary_processor.py'
+            },
+            'closing_stock': {
+                'reports': ['closing_stock'],
+                'processor': 'rzn1_closing_stock_processor.py'
+            }
+        }
+        
+        # Run all workflows - collect all reports and processors
+        all_reports = []
+        all_processors = []
+        for workflow_name, workflow_config in workflows.items():
+            all_reports.extend(workflow_config['reports'])
+            if workflow_config['processor'] not in all_processors:
+                all_processors.append(workflow_config['processor'])
+        
+        rzn1_reports = all_reports
         logger.info(f"Generating RZN1 reports: {rzn1_reports}")
         for report_type in rzn1_reports:
             try:
@@ -156,13 +185,16 @@ def main():
             for file_path in downloaded_files:
                 try:
                     filename = os.path.basename(file_path)
-                    # Use date-specific subfolders as expected by rzn1_order_summary_processor.py
-                    if 'ORDER_SUMMARY' in filename or 'SALES_RETURN' in filename:
-                        s3_key = f"rzn1/order_summary/raw/{date_prefix}/{filename}"
-                    elif 'inventory' in filename:
+                    # Use date-specific subfolders as expected by processors
+                    # Route all files to inventory_summary folder for now
+                    if 'OPEN_ORDER_SUMMARY' in filename:
                         s3_key = f"rzn1/inventory_summary/raw/{date_prefix}/{filename}"
-                    elif 'closing_stock' in filename:
-                        s3_key = f"rzn1/closing_stock/raw/{date_prefix}/{filename}"
+                    elif 'BATCH_LEVEL_INVENTORY' in filename:
+                        s3_key = f"rzn1/inventory_summary/raw/{date_prefix}/{filename}"
+                    elif 'CLOSING_STOCK' in filename:
+                        s3_key = f"rzn1/inventory_summary/raw/{date_prefix}/{filename}"
+                    elif 'ORDER_SUMMARY' in filename or 'SALES_RETURN' in filename:
+                        s3_key = f"rzn1/order_summary/raw/{date_prefix}/{filename}"
                     else:
                         s3_key = f"rzn1/raw/{filename}"
                     
@@ -182,12 +214,7 @@ def main():
         # Step 8: Execute processor scripts (if not skipped)
         if not args.skip_processors and uploaded_files:
             logger.info("Step 8: Executing processor scripts...")
-            processor_scripts = [
-                'rzn1_order_summary_processor.py'  # Use the actual order summary processor
-                # We'll add other processors later:
-                # 'rzn1_inventory_summary_processor.py',
-                # 'rzn1_closing_stock_processor.py'
-            ]
+            processor_scripts = all_processors  # Use all processors from workflow config
             
             for script in processor_scripts:
                 if os.path.exists(script):

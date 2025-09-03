@@ -184,7 +184,6 @@ class InventorySummaryProcessor:
             df['Warehouse'] = df['Warehouse'].str.upper()
             
             logger.info(f"Data cleaning completed. Final shape: {df.shape}")
-            import pdb; pdb.set_trace()
             return df
         except Exception as e:
             logger.error(f"Error in data cleaning: {str(e)}")
@@ -225,7 +224,6 @@ class InventorySummaryProcessor:
             df['Warehouse'] = df['Warehouse'].str.upper()
             
             logger.info(f"Data cleaning completed. Final shape: {df.shape}")
-            import pdb; pdb.set_trace()
             return df
         except Exception as e:
             logger.error(f"Error in data cleaning: {str(e)}")
@@ -290,7 +288,6 @@ class InventorySummaryProcessor:
             
             logger.info(f"Data aggregation completed. Final shape: {df_result.shape}")
             return df_result
-            import pdb; pdb.set_trace()
         except Exception as e:
             logger.error(f"Error in data aggregation: {str(e)}")
             raise

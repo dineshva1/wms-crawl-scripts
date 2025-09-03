@@ -125,6 +125,62 @@ class DualServiceAPIClient:
                 'From Date': yesterday,
                 'To Date': ''
             }
+        elif report_type == 'batch_level_inventory':
+            return {
+                'id': '13',
+                'columns': [
+                    "SKU Code", "SKU Reference", "SKU Category", "SKU Sub Category", 
+                    "SKU Brand", "Product Description", "SKU Class", "Status", 
+                    "Batch No", "Manufactured Date", "Expiry Date", "MRP", "Price", 
+                    "Vendor Batch No", "Restest Date", "Re-evaluation Date", 
+                    "Best Before Date", "Inspection Lot Number", "Weight", 
+                    "Batch Reference", "Zone", "Location", "Total Quantity", 
+                    "Reserved_Quantity", "Available Quantity"
+                ],
+                'Warehouse': [self.warehouse],  # Single warehouse for batch inventory
+                'SKU Code': '',
+                'SKU Category': '',
+                'Zone': '',
+                'Location': ''
+            }
+        elif report_type == 'open_order_summary':
+            return {
+                'id': '145',
+                'columns': [
+                    "Cancelled Order Qty", "OrderStatus", "Created By", "Order Reference", 
+                    "Order Date", "Cancelled By", "Cancelled By User", "Customer Name", 
+                    "Customer GST", "Customer Phone Number", "Order Type", "Slot From", 
+                    "Slot To", "SKU Desc", "SKU Code", "SKU Category", "SKU Sub Category", 
+                    "SKU Weight", "SKU Brand", "Order Qty", "Mrp", "Unit Price", 
+                    "Customer Po Number", "Customer Reference", "Open Order quantity", 
+                    "Allocation Details"
+                ],
+                'Warehouse': [self.warehouse],  # Single warehouse for open orders
+                'From Date': yesterday,
+                'To Date': '',
+                'Order Reference': '',
+                'Customer Name': '',
+                'Order Type': '',
+                'SKU Code': ''
+            }
+        elif report_type == 'closing_stock':
+            return {
+                'id': '13',  # Same as batch level inventory but for all warehouses
+                'columns': [
+                    "SKU Code", "SKU Reference", "SKU Category", "SKU Sub Category", 
+                    "SKU Brand", "Product Description", "SKU Class", "Status", 
+                    "Batch No", "Manufactured Date", "Expiry Date", "MRP", "Price", 
+                    "Vendor Batch No", "Restest Date", "Re-evaluation Date", 
+                    "Best Before Date", "Inspection Lot Number", "Weight", 
+                    "Batch Reference", "Zone", "Location", "Total Quantity", 
+                    "Reserved_Quantity", "Available Quantity"
+                ],
+                'Warehouse': warehouse_list,  # All warehouses for closing stock
+                'SKU Code': '',
+                'SKU Category': '',
+                'Zone': '',
+                'Location': ''
+            }
         else:
             # Default parameters for other report types
             return {
@@ -161,7 +217,7 @@ class DualServiceAPIClient:
             logger.info(f"Generating {report_type} report for {service.upper()}...")
             logger.info(f"Using URL: {url}")
             
-            if report_type in ['order_summary', 'sales_return']:
+            if report_type in ['order_summary', 'sales_return', 'closing_stock']:
                 # Build the exact URL as in the curl command - arrays must be JSON strings
                 # Use separators to remove spaces from JSON (to match curl format)
                 columns_json = json.dumps(params['columns'], separators=(',', ':'))
@@ -172,9 +228,14 @@ class DualServiceAPIClient:
                     'id': params['id'],
                     'columns': columns_json,
                     'Warehouse': warehouse_json,
-                    'From Date': params['From Date'],
-                    'To Date': params.get('To Date', ''),
                 }
+                
+                # Add date parameters for order_summary and sales_return
+                if report_type in ['order_summary', 'sales_return']:
+                    url_params.update({
+                        'From Date': params['From Date'],
+                        'To Date': params.get('To Date', ''),
+                    })
                 
                 # Add report-specific parameters
                 if report_type == 'order_summary':
@@ -193,6 +254,13 @@ class DualServiceAPIClient:
                         'Reference Type': params.get('Reference Type', ''),
                         'Credit Note Number': params.get('Credit Note Number', ''),
                         'Sku Code': params.get('Sku Code', '')
+                    })
+                elif report_type == 'closing_stock':
+                    url_params.update({
+                        'SKU Code': params.get('SKU Code', ''),
+                        'SKU Category': params.get('SKU Category', ''),
+                        'Zone': params.get('Zone', ''),
+                        'Location': params.get('Location', '')
                     })
                 
                 # Build query string with proper encoding
@@ -371,10 +439,17 @@ class DualServiceAPIClient:
             pattern_normalized = report_name_pattern.lower().replace('_', ' ')
             name_normalized = report_name.replace('_', ' ')
             
-            # Special handling for sales return reports which might appear as "SALES RETURN" or similar
+            # Special handling for different report types
             if pattern_normalized == 'sales return':
                 pattern_matches = ('sales return' in name_normalized or 
                                  'return' in name_normalized)
+            elif pattern_normalized == 'closing stock':
+                # Closing stock generates "Batch Level Inventory Report"
+                pattern_matches = ('batch level inventory' in name_normalized)
+            elif pattern_normalized == 'batch level inventory':
+                pattern_matches = ('batch level inventory' in name_normalized)
+            elif pattern_normalized == 'open order summary':
+                pattern_matches = ('open order summary' in name_normalized)
             else:
                 pattern_matches = pattern_normalized in name_normalized
             
