@@ -11,7 +11,7 @@ from logger_config import setup_logger, get_default_log_file
 
 # Setup logger
 logger = setup_logger('api_client', get_default_log_file('api_client'))
-
+RZN1_WAREHOUSE = "up090_lko_mat"
 class DualServiceAPIClient:
     def __init__(self, tokens):
         """
@@ -21,17 +21,19 @@ class DualServiceAPIClient:
         """
         self.tokens = tokens
         self.sessions = {}
+        self.warehouse = RZN1_WAREHOUSE  # Set warehouse attribute
         
         # Create session for RZN1 service
         if 'rzn1' in tokens and tokens['rzn1']:
             session = requests.Session()
-            # Use the direct token format (not Bearer) to match the curl command
+            # Use the dynamically generated token from authentication
             session.headers.update({
-                'Authorization': 'Q4THFcPJzdkzlae71bUByw6sdE9dcl',  # Direct token as in curl
+                'Authorization': tokens['rzn1'],  # Use the actual token from auth
                 'warehouse': RZN1_WAREHOUSE
             })
             self.sessions['rzn1'] = session
             logger.info(f"Initialized RZN1 session with warehouse: {RZN1_WAREHOUSE}")
+            logger.info(f"Using token: {tokens['rzn1'][:20]}...")  # Log first 20 chars for verification
         else:
             raise ValueError("RZN1 token is required")
     
@@ -137,7 +139,7 @@ class DualServiceAPIClient:
                     "Batch Reference", "Zone", "Location", "Total Quantity", 
                     "Reserved_Quantity", "Available Quantity"
                 ],
-                'Warehouse': [self.warehouse],  # Single warehouse for batch inventory
+                'Warehouse': [RZN1_WAREHOUSE],  # Single warehouse for batch inventory
                 'SKU Code': '',
                 'SKU Category': '',
                 'Zone': '',
@@ -155,8 +157,8 @@ class DualServiceAPIClient:
                     "Customer Po Number", "Customer Reference", "Open Order quantity", 
                     "Allocation Details"
                 ],
-                'Warehouse': [self.warehouse],  # Single warehouse for open orders
-                'From Date': yesterday,
+                'Warehouse': [RZN1_WAREHOUSE],  # Single warehouse for open orders
+                'From Date': "2025-09-01",  # Use specific date like in curl
                 'To Date': '',
                 'Order Reference': '',
                 'Customer Name': '',
@@ -217,7 +219,7 @@ class DualServiceAPIClient:
             logger.info(f"Generating {report_type} report for {service.upper()}...")
             logger.info(f"Using URL: {url}")
             
-            if report_type in ['order_summary', 'sales_return', 'closing_stock']:
+            if report_type in ['order_summary', 'sales_return', 'closing_stock', 'batch_level_inventory', 'open_order_summary']:
                 # Build the exact URL as in the curl command - arrays must be JSON strings
                 # Use separators to remove spaces from JSON (to match curl format)
                 columns_json = json.dumps(params['columns'], separators=(',', ':'))
@@ -261,6 +263,22 @@ class DualServiceAPIClient:
                         'SKU Category': params.get('SKU Category', ''),
                         'Zone': params.get('Zone', ''),
                         'Location': params.get('Location', '')
+                    })
+                elif report_type == 'batch_level_inventory':
+                    url_params.update({
+                        'SKU Code': params.get('SKU Code', ''),
+                        'SKU Category': params.get('SKU Category', ''),
+                        'Zone': params.get('Zone', ''),
+                        'Location': params.get('Location', '')
+                    })
+                elif report_type == 'open_order_summary':
+                    url_params.update({
+                        'From Date': params['From Date'],
+                        'To Date': params.get('To Date', ''),
+                        'Order Reference': params.get('Order Reference', ''),
+                        'Customer Name': params.get('Customer Name', ''),
+                        'Order Type': params.get('Order Type', ''),
+                        'SKU Code': params.get('SKU Code', '')
                     })
                 
                 # Build query string with proper encoding
@@ -428,6 +446,11 @@ class DualServiceAPIClient:
         """
         reports = self.get_available_reports(service)
         
+        # Debug: Log all available reports with their IDs to help identify the correct one
+        logger.info(f"DEBUG: All available reports for pattern '{report_name_pattern}':")
+        for report in reports[:10]:  # Show first 10 reports
+            logger.info(f"  ID: {report.get('id')}, Name: '{report.get('name')}', Status: {report.get('status')}")
+        
         # Filter for completed reports matching the pattern
         matching_reports = []
         for report in reports:
@@ -439,10 +462,15 @@ class DualServiceAPIClient:
             pattern_normalized = report_name_pattern.lower().replace('_', ' ')
             name_normalized = report_name.replace('_', ' ')
             
-            # Special handling for different report types
+            # Special handling for different report types with exact matching
             if pattern_normalized == 'sales return':
-                pattern_matches = ('sales return' in name_normalized or 
-                                 'return' in name_normalized)
+                pattern_matches = ('sales return' in name_normalized and 
+                                 'open' not in name_normalized)  # Exclude "Open" reports
+            elif pattern_normalized == 'order summary':
+                # Exact match for ORDER SUMMARY to avoid confusion with Open Order Summary
+                pattern_matches = (name_normalized == 'order summary' or 
+                                 'order summary' in name_normalized and 
+                                 'open' not in name_normalized)  # Exclude "Open Order Summary"
             elif pattern_normalized == 'closing stock':
                 # Closing stock generates "Batch Level Inventory Report"
                 pattern_matches = ('batch level inventory' in name_normalized)
@@ -471,3 +499,38 @@ class DualServiceAPIClient:
         download_url = latest_report.get('generated_file')
         local_path = os.path.join(TEMP_DOWNLOAD_DIR, local_filename)
         return self.download_file(download_url, local_path, service)
+    
+    def download_latest_completed_report_by_id(self, service, report_id, report_name_pattern, local_filename):
+        """
+        Download the latest completed report matching the report ID first, then name pattern as fallback
+        Args:
+            service (str): 'rzn1'
+            report_id (str): Report ID to match (e.g., '100', '145')
+            report_name_pattern (str): Pattern to match in report name as fallback
+            local_filename (str): Local filename to save as
+        Returns:
+            str: Path to downloaded file or None if not found
+        """
+        reports = self.get_available_reports(service)
+        
+        # Debug: Log all available reports with their IDs to help identify the correct one
+        logger.info(f"DEBUG: Looking for report ID '{report_id}' or name pattern '{report_name_pattern}':")
+        for report in reports[:10]:  # Show first 10 reports
+            logger.info(f"  ID: {report.get('id')}, Name: '{report.get('name')}', Status: {report.get('status')}")
+        
+        # First, try to find by exact report ID
+        for report in reports:
+            if (str(report.get('id')) == str(report_id) and 
+                report.get('status', '').lower() == 'completed' and 
+                report.get('generated_file')):
+                
+                download_url = report.get('generated_file')
+                logger.info(f"Found completed report by ID: {report.get('name')} (ID: {report.get('id')})")
+                logger.info(f"Created: {report.get('creation_date')}")
+                
+                local_path = os.path.join(TEMP_DOWNLOAD_DIR, local_filename)
+                return self.download_file(download_url, local_path, service)
+        
+        # If not found by ID, fall back to name pattern matching
+        logger.warning(f"No completed report found with ID '{report_id}', trying name pattern '{report_name_pattern}'")
+        return self.download_latest_completed_report(service, report_name_pattern, local_filename)

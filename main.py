@@ -148,11 +148,22 @@ def main():
         
         # Download RZN1 reports
         logger.info("Downloading RZN1 reports...")
+        
+        # Map our report types to actual API report names (the API uses different names than request IDs)
+        report_name_mapping = {
+            'order_summary': 'ORDER SUMMARY',        # The actual name from API response
+            'sales_return': 'SALES RETURN',
+            'batch_level_inventory': 'Batch Level Inventory Report',
+            'open_order_summary': 'Open Order Summary Report',
+            'closing_stock': 'Batch Level Inventory Report'  # Closing stock uses same report as batch inventory
+        }
+        
         for report_type in rzn1_reports:
             try:
                 filename = generate_filename('rzn1', report_type, date_prefix)
-                # Use the new method that looks for completed reports
-                local_path = api_client.download_latest_completed_report('rzn1', report_type, filename)
+                # Use the mapped report name for precise matching
+                report_name_pattern = report_name_mapping.get(report_type, report_type)
+                local_path = api_client.download_latest_completed_report('rzn1', report_name_pattern, filename)
                 if local_path:
                     downloaded_files.append(local_path)
                     logger.info(f"✓ Downloaded: {filename}")

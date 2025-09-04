@@ -18,7 +18,8 @@ RZN1_WAREHOUSE = os.getenv('RZN1_WAREHOUSE', 'up108_kum_ls1')
 RZN1_ENDPOINTS = {
     'order_summary': os.getenv('RZN1_ORDER_SUMMARY_ENDPOINT', '/api/v1/reports/generate-report/'),
     'sales_return': os.getenv('RZN1_SALES_RETURN_ENDPOINT', '/api/v1/reports/generate-report/'),
-    'inventory_summary': os.getenv('RZN1_INVENTORY_SUMMARY_ENDPOINT', '/api/v1/reports/generate-report/'),
+    'batch_level_inventory': os.getenv('RZN1_INVENTORY_SUMMARY_ENDPOINT', '/api/v1/reports/generate-report/'),
+    'open_order_summary': os.getenv('RZN1_INVENTORY_SUMMARY_ENDPOINT', '/api/v1/reports/generate-report/'),
     'closing_stock': os.getenv('RZN1_CLOSING_STOCK_ENDPOINT', '/api/v1/reports/generate-report/')
 }
 

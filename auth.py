@@ -42,9 +42,8 @@ def get_auth_token(service='rzn1'):
             logger.info(f"Token type: {token_data.get('token_type', 'Bearer')}")
             logger.info(f"Token expires in: {token_data.get('expires_in', 'Unknown')} seconds")
             
-            # Return the full token (Bearer + access_token) if token_type is provided
-            token_type = token_data.get('token_type', 'Bearer')
-            return f"{token_type} {access_token}"
+            # Return just the access_token without Bearer prefix as per working curl example
+            return access_token
             
         except requests.exceptions.RequestException as e:
             logger.error(f"Error getting auth token for {service}: {str(e)}")

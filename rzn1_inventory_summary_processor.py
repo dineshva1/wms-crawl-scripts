@@ -49,7 +49,7 @@ class InventorySummaryProcessor:
             "Clothing And Accessories", "Consumables", "Footwears", "Rajeev Colony_CxEC Lite"
         ]
         
-        self.excluded_zone_keywords = ['damaged_zone', 'damaged', 'DAMAGEZONE', 'expiry', 'qc_zone', 'short']
+        self.excluded_zone_keywords = ['damaged_zone', 'damage', 'damaged', 'DAMAGEZONE', 'expiry', 'qc_zone', 'short']
     
     def find_file_with_prefix(self, file_prefix: str, search_prefix: str) -> str:
         """
